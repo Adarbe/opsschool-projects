@@ -1,108 +1,137 @@
-###### Provider ######
+
+######Provider#####
+
 provider "aws" {
-    access_key = var.AWS_ACCESS_KEY_ID
-    secret_key = var.AWS_SECRET_ACCESS_KEY
-    region = "us-east-1"
-
+  access_key = var.AWS_ACCESS_KEY_ID
+  secret_key = var.AWS_SECRET_ACCESS_KEY
+  region = "us-east-1"
 }
 
 
 
-####### Resource ######
-resource "aws_vpc" "VPC3" {
-  cidr_block = "10.0.0.0/16"
-  tags {
-    Name = "VPC3"
+
+#######Resource####
+
+resource "aws_vpc" "homework3" {
+  cidr_block       = "10.0.0.0/16"
+  tags = {
+    Name = "homework3"
   }
+  enable_dns_hostnames = true
 }
 
 
+######## EC2 ########
 
-## Network ##
-resource "aws_internet_gateway" "IGW" {
-  vpc_id = "${aws_vpc.VPC3.id}"
-  tags {
-    Name = "IGW"
-  }
-}
-
-
-resource "aws_eip" "nateip" {
-  vpc = true
+resource "aws_instance" "web" {
+  #description = "create 2 EC2 machines and install nginx"
   count = 2
+  ami = "ami-024582e76075564db"
+  instance_type = "t2.micro"
+  key_name = aws_key_pair.servers.key_name
+  iam_instance_profile = "${aws_iam_instance_profile.ec2_iam.id}"
+  tags = {
+    Name = "ngnix ${count.index}"
   }
-
-resource "aws_nat_gateway" "NATGW" {
-  allocation_id = "${aws_eip.nateip[count.index].id}"
+  connection {
+    type = "ssh"
+    host = "self.public_ip"
+    private_key = tls_private_key.servers.public_key_openssh
+    user = "ubuntu"
+  }
+  user_data = <<-EOF
+				#! /bin/bash
+              	sudo apt-get update
+              	sudo apt-get install -y nginx
+              	sudo chmod +777 /var/www/html/
+              	sudo service nginx start
+              	sudo sed -i 's/Welcome to nginx/ OpsSchool Rules!/g' /var/www/html/index.nginx-debian.html
+			  	sudo sed -i '1 i\'"$HOSTNAME" /var/www/html/index.nginx-debian.html
+				sudo service nginx restart
+              	EOF
+  availability_zone = "${data.aws_availability_zones.available.names[count.index]}"
   subnet_id = "${aws_subnet.pubsub[count.index].id}"
+  vpc_security_group_ids = [aws_security_group.nginx_sg.id]
+}
+resource "aws_instance" "DB" {
   count = 2
+  ami = "ami-024582e76075564db"
+  instance_type = "t2.micro"
+  key_name = aws_key_pair.servers.key_name
   tags = {
-    Name = "NATGW ${count.index}"
-   }
+    Name = "DB ${count.index}"
   }
-
-
-
-
-## Subnets ##
-
-resource "aws_subnet" "pubsub" {
-  count = 2
-  vpc_id = "${aws_vpc.VPC3.id}"
-  cidr_block = "10.0.${2+count.index}.0/24"
+  connection {
+    type = "ssh"
+    host = "self.public_ip"
+    private_key = tls_private_key.servers.public_key_openssh
+    user = "ubuntu"
+  }
   availability_zone = "${data.aws_availability_zones.available.names[count.index]}"
-  map_public_ip_on_launch = true
-  tags = {
-    Name = "pubsub ${count.index}"
-  }
+  subnet_id = "${data.aws_subnet.private[count.index].id}"
+  vpc_security_group_ids = ["${aws_security_group.nat.id}"]
 }
 
-resource "aws_subnet" "prisub" {
-  count = 2
-  vpc_id = "${aws_vpc.VPC3.id}"
-  cidr_block = "10.0.${10+count.index}.0/24"
-  availability_zone = "${data.aws_availability_zones.available.names[count.index]}"
-  map_public_ip_on_launch = true
-  tags = {
-    Name = "prisub ${count.index}"
+
+
+
+  #####Data#######
+
+data "aws_ami" "ubuntu" {
+    most_recent = true
+
+    filter {
+      name = "name"
+      values = [
+        "ubuntu/images/hvm-ssd/ubuntu-bionic-18.04-amd64-server-*"]
     }
+
+    filter {
+      name = "virtualization-type"
+      values = ["hvm"]
+    }
+
+    owners = [
+      "099720109477"]
+    # Canonical
   }
 
 
+resource "aws_iam_role" "role" {
+  name = "ec2_role"
+  path = "/"
 
-
-## Route ##
-
-resource "aws_route_table" "pubroute" {
-  vpc_id = "${aws_vpc.VPC3.id}"
-  route {
-    cidr_block = "10.0.${2+count.index}.0/24"
-    gateway_id = "${aws_internet_gateway.IGW.id}"
-  }
-  tags = {
-    Name = "pubroute"
-  }
+  assume_role_policy = <<-EOF
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Action": "sts:AssumeRole",
+            "Principal": {
+               "Service": "ec2.amazonaws.com"
+            },
+            "Effect": "Allow",
+            "Sid": ""
+        }
+    ]
+}
+EOF
 }
 
-resource "aws_route_table" "priroute" {
-  vpc_id = "${aws_vpc.VPC3.id}"
-  count = 2
-  route {
-    cidr_block = "0.0.0.0/0"§
-    nat_gateway_id = "${aws_nat_gateway.NATGW[count.index].id}"
-  }
+resource "aws_iam_instance_profile" "ec2_iam" {
+  name = "ec2"
+  role = "${aws_iam_role.role.id}"
 }
 
 
-
-
-
-
-## EC2 ##
-
-
-####### Data ########
+data "aws_subnet" "private" {
+  count=2
+  id = "${aws_subnet.prisub[count.index].id}"
+}
 data "aws_availability_zones" "available" {}
+
+
+
 
 
 

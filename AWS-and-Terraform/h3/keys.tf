@@ -1,7 +1,7 @@
 resource "aws_security_group" "allow_ssh_web" {
   name = "web_servers"
   description = "allow ports from web servers"
-  vpc_id = "${aws_vpc.homework2.id}"
+  vpc_id = "${aws_vpc.homework3.id}"
   #Allow SSH from everywhere
   ingress {
     from_port = 22
@@ -23,7 +23,7 @@ resource "aws_security_group" "allow_ssh_web" {
 resource "aws_security_group" "allow_ssh_DB" {
   name = "DB_servers"
   description = "allow ports from DB servers"
-  vpc_id = "${aws_vpc.homework2.id}"
+  vpc_id = "${aws_vpc.homework3.id}"
   #Allow SSH from everywhere
   ingress {
     from_port = 80
